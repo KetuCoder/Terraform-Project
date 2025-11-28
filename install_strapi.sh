@@ -1,36 +1,64 @@
 #!/bin/bash
-set -e
 
-LOG=/var/log/strapi-install.log
-exec > >(tee -a &{LOG}) 2>&1
-
-echo "Strating Strapi Installation On Ubuntu.....!"
-
+# ---------------------------
+# Update system packages
+# ---------------------------
 sudo apt update -y
-
 sudo apt upgrade -y
 
-curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-apt install -y nodejs git build-essential nginx
+# ---------------------------
+# Install Node.js 20 and dependencies
+# ---------------------------
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs build-essential git
 
-# Create user
-useradd -m -s /bin/bash strapi
-
+# ---------------------------
 # Install PM2 globally
-npm install pm2@latest -g
+# ---------------------------
+sudo npm install -g pm2
 
-# Switch to strapi user and create project
-sudo -u strapi bash <<EOF
-cd ~
-npx create-strapi-app@latest my-strapi-project --quickstart --no-run
-cd my-strapi-project
-npm install
-npm run build
+# ---------------------------
+# Create Strapi user (non-interactive)
+# ---------------------------
+USERNAME="strapi"
+PASSWORD="Strapi@123"   # Change this if needed
+
+# Check if user exists
+if id "$USERNAME" &>/dev/null; then
+    echo "User $USERNAME already exists"
+else
+    sudo useradd -m -s /bin/bash "$USERNAME"
+    echo "$USERNAME:$PASSWORD" | sudo chpasswd
+    sudo usermod -aG sudo "$USERNAME"
+fi
+
+# ---------------------------
+# Switch to Strapi user and install Strapi
+# ---------------------------
+sudo -i -u "$USERNAME" bash << EOF
+
+# Install npx if not already
+npm install -g npx
+
+# Create Strapi app non-interactively
+npx create-strapi-app@latest my-strapi-app --quickstart --no-telemetry --no-run
+
+cd ~/my-strapi-app
+
+# ---------------------------
+# Start Strapi with PM2
+# ---------------------------
+pm2 start npm --name strapi -- run develop
+pm2 save
+
+# Setup PM2 startup on boot
+sudo env PATH=\$PATH:/usr/bin pm2 startup systemd -u $USERNAME --hp /home/$USERNAME
+
 EOF
 
-sudo -u strapi pm2 start /home/strapi/my-strapi-project/npm --name strapi-app -- start
-sudo -u strapi pm2 save
-pm2 startup systemcd -u strapi --hp /home/strapi
-
-echo "Strapi Installation Finished...!"
-echo "Strapi Should Be Available On Port 1337 After A Few Minutes.......!"
+# ---------------------------
+# Final message
+# ---------------------------
+echo "Strapi installation completed!"
+echo "Access Strapi admin panel at http://<EC2_PUBLIC_IP>:1337/admin"
+echo "Use 'pm2 logs strapi' to see logs and 'pm2 list' to check status"
