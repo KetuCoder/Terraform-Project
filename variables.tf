@@ -2,6 +2,10 @@ variable "aws_region" {
     default = "us-east-1"
 }
 
+variable "ami" {
+    default = "ami-0ecb62995f68bb549"
+}
+
 variable "project_name" {
     description = "Project Name"
     type = string
