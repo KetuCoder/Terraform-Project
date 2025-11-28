@@ -58,11 +58,3 @@ resource "aws_instance" "strapi" {
 
   user_data = file("${path.module}/install_strapi.sh")
 }
-
-output "public_ip" {
-  value = aws_instance.strapi.public_ip
-}
-
-output "strapi_url" {
-  value = "http://${aws_instance.strapi.public_ip}:1337"
-}
