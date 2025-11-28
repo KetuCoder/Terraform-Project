@@ -1,55 +1,79 @@
-module "vpc" {
-  source         = "./modules/vpc"
-  vpc_cidr       = var.vpc_cidr
-  public_subnets = var.public_subnets
-  private_subnets = var.private_subnets
-  azs            = var.azs
-  env            = var.env
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 4.0"
+    }
+  }
 }
 
-module "ec2" {
-  source       = "./modules/ec2"
-  vpc_id       = module.vpc.vpc_id
-  subnet_ids   = module.vpc.public_subnets
-  instance_type = var.instance_type
-  ami_id        = var.ami_id
-  key_name      = var.key_name
-  env           = var.env
+provider "aws" {
+  region = var.aws_region
 }
 
-module "rds" {
-  source       = "./modules/rds"
-  subnet_ids   = module.vpc.private_subnets
-  db_name      = var.db_name
-  username     = var.db_username
-  password     = var.db_password
-  env          = var.env
+# Ubuntu 22.04 AMI
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
 }
 
-module "s3" {
-  source      = "./modules/s3"
-  bucket_name = var.s3_bucket_name
-  env         = var.env
+resource "aws_security_group" "strapi_sg" {
+  name        = "${var.project_name}-sg"
+  description = "Allow SSH & Strapi port 1337"
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.ssh_allowed_cidr]
+  }
+
+  ingress {
+    description = "Strapi"
+    from_port   = 1337
+    to_port     = 1337
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-sg"
+  }
 }
 
-module "dynamodb" {
-  source     = "./modules/dynamodb"
-  table_name = var.dynamodb_table_name
-  hash_key   = var.dynamodb_hash_key
-  env        = var.env
+resource "aws_instance" "strapi" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  key_name               = var.key_name
+  vpc_security_group_ids = [aws_security_group.strapi_sg.id]
+
+  associate_public_ip_address = true
+
+  tags = {
+    Name = "${var.project_name}-instance"
+  }
+
+  user_data = file("${path.module}/install_strapi.sh")
 }
 
-module "lambda" {
-  source           = "./modules/lambda"
-  handler          = var.lambda_handler
-  runtime          = var.lambda_runtime
-  filename         = var.lambda_filename
-  env_variables    = var.lambda_env_variables
-  env              = var.env
+output "public_ip" {
+  value = aws_instance.strapi.public_ip
 }
 
-module "sns" {
-  source      = "./modules/sns"
-  topic_name  = var.sns_topic_name
-  env         = var.env
+output "strapi_url" {
+  value = "http://${aws_instance.strapi.public_ip}:1337"
 }
