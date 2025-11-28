@@ -56,7 +56,7 @@ resource "aws_instance" "strapi" {
     Name = "${var.project_name}-instance"
   }
 
-  user_data = file("${path.module}/install_strapi.sh")
+  user_data = file("install_strapi.sh")
 }
 
 output "public_ip" {
